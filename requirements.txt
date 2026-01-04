@@ -6,4 +6,5 @@ dateparser
 langchain
 langchain-google-genai
 langchain-core
-langchain_groq
+langchain_groq.
+flask

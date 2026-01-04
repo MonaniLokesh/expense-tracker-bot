@@ -42,18 +42,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         print(f"Error: {e}")
         await update.message.reply_text("Something went wrong processing your request.")
 
+print("Building Bot Application...")
+app = (
+    ApplicationBuilder()
+    .token(TELEGRAM_BOT_TOKEN)
+    .read_timeout(30)
+    .write_timeout(30)
+    .connect_timeout(30)
+    .build()
+)
+app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+
 if __name__ == "__main__":
-    print("Bot is starting...")
-    
-    app = (
-        ApplicationBuilder()
-        .token(TELEGRAM_BOT_TOKEN)
-        .read_timeout(30)
-        .write_timeout(30)
-        .connect_timeout(30)
-        .build()
-    )
-    
-    app.add_handler(MessageHandler((filters.TEXT | filters.PHOTO) & ~filters.COMMAND, handle_message))
-    
+    print("Running locally...")
     app.run_polling()
