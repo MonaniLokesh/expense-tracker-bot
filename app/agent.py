@@ -1,3 +1,5 @@
+import base64
+from langchain_core.messages import HumanMessage
 from langchain_groq import ChatGroq
 from langchain_classic.agents import AgentExecutor, create_react_agent
 from langchain_core.prompts import PromptTemplate
@@ -9,6 +11,11 @@ load_dotenv()
 
 text_model = ChatGroq(
     model="llama-3.3-70b-versatile",
+    temperature=0
+)
+
+vision_model = ChatGroq(
+    model="meta-llama/llama-4-scout-17b-16e-instruct",
     temperature=0
 )
 
@@ -51,3 +58,44 @@ agent_executor = AgentExecutor(
     verbose=True,
     handle_parsing_errors=True
 )
+
+async def process_image_expense(user_id: int, image_data: bytes):
+    """
+    Uses Groq's Vision model to analyze the receipt.
+    """
+    b64_image = base64.b64encode(image_data).decode("utf-8")
+
+    message = HumanMessage(
+        content=[
+            {
+                "type": "text",
+                "text": (
+                    f"Analyze this receipt image. "
+                    f"Extract the total amount and a category (e.g., food, transport, bills). "
+                    f"The User ID is {user_id}. "
+                    f"Return ONLY a JSON string compatible with the record_expense tool. "
+                    f"Format: {{\"user_id\": {user_id}, \"amount\": 10.0, \"category\": \"food\", \"description\": \"item name\"}}"
+                ),
+            },
+            {
+                "type": "image_url",
+                "image_url": {"url": f"data:image/jpeg;base64,{b64_image}"},
+            },
+        ]
+    )
+
+    try:
+        response = await vision_model.ainvoke([message])
+        content = response.content.replace("```json", "").replace("```", "").strip()
+        
+        start_idx = content.find("{")
+        end_idx = content.rfind("}") + 1
+        if start_idx != -1 and end_idx != -1:
+            json_str = content[start_idx:end_idx]
+            result = record_expense.invoke(json_str)
+            return f"Receipt processed! {result}"
+        else:
+            return "Could not find valid JSON in the vision model's response."
+            
+    except Exception as e:
+        return f"Error processing image with Groq: {str(e)}"

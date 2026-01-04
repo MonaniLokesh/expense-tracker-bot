@@ -1,4 +1,5 @@
 import logging
+import io
 from telegram import Update
 from telegram.ext import ApplicationBuilder, MessageHandler, ContextTypes, filters
 from app.config import TELEGRAM_BOT_TOKEN
@@ -11,22 +12,35 @@ logging.basicConfig(
 logging.getLogger("httpx").setLevel(logging.WARNING)
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_message = update.message.text
     user_id = update.message.from_user.id
     
-    print(f"User {user_id} says: {user_message}")
+    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action='typing')
+    
+    response = ""
 
     try:
-        await context.bot.send_chat_action(chat_id=update.effective_chat.id, action='typing')
-    except Exception:
-        pass
 
-    try:
-        response = await run_agent(user_id, user_message)
+        if update.message.photo:
+            print(f"--- PHOTO RECEIVED from {user_id} ---")
+            file_id = update.message.photo[-1].file_id
+            new_file = await context.bot.get_file(file_id)
+    
+            image_buffer = io.BytesIO()
+            await new_file.download_to_memory(image_buffer)
+            image_bytes = image_buffer.getvalue()
+            
+            response = await run_agent(user_id, image_data=image_bytes)
+
+        elif update.message.text:
+            user_message = update.message.text
+            print(f"--- TEXT RECEIVED from {user_id}: {user_message} ---")
+            response = await run_agent(user_id, message_text=user_message)
+
         await update.message.reply_text(str(response))
+
     except Exception as e:
         print(f"Error: {e}")
-        await update.message.reply_text("Something went wrong.")
+        await update.message.reply_text("Something went wrong processing your request.")
 
 if __name__ == "__main__":
     print("Bot is starting...")
@@ -34,12 +48,12 @@ if __name__ == "__main__":
     app = (
         ApplicationBuilder()
         .token(TELEGRAM_BOT_TOKEN)
-        .read_timeout(30) 
+        .read_timeout(30)
         .write_timeout(30)
         .connect_timeout(30)
         .build()
     )
     
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    app.add_handler(MessageHandler((filters.TEXT | filters.PHOTO) & ~filters.COMMAND, handle_message))
     
     app.run_polling()
