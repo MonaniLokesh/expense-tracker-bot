@@ -3,3 +3,6 @@ google-generativeai
 supabase
 python-dotenv
 dateparser
+langchain
+langchain-google-genai
+langchain-core
