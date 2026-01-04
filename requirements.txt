@@ -6,5 +6,5 @@ dateparser
 langchain
 langchain-google-genai
 langchain-core
-langchain_groq.
+langchain-groq.
 flask
