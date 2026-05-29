@@ -5,5 +5,9 @@ create table expenses (
     category text not null,
     description text,
     expense_date date not null,
-    created_at timestamp default now()
+    created_at timestamptz default now(),
+    source text default 'whatsapp',
+    raw_message text,
+    confidence float,
+    deleted_at timestamptz
 );

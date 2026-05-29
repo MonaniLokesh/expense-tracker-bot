@@ -1,21 +1,18 @@
-# Expense Tracker Telegram Bot
+# WhatsApp Expense Tracker
 
-A Telegram-based expense tracker that understands natural language expense inputs
-using Gemini 2.0 Flash and stores data in Supabase.
-
-## Features
-- Chat-based expense logging
-- Automatic category detection
-- Daily / weekly / monthly expense summaries
-- Gemini 2.0 Flash for NLP
-- Supabase (PostgreSQL) backend
-
-## Tech Stack
-- Python
-- python-telegram-bot
-- Gemini 2.0 Flash
-- Supabase
+Log expenses via WhatsApp (Twilio). Natural language and receipt images are handled by a Groq/LangChain agent; data is stored in Supabase.
 
 ## Setup
+
+See [SETUP.md](SETUP.md). Copy `example.env` to `.env`, run the SQL in Supabase, then:
+
 ```bash
-pip install -r requirements.txt
+uv sync
+uv run python run.py
+```
+
+## Stack
+
+- FastAPI + Twilio WhatsApp
+- LangChain (Groq Llama 4 Scout vision)
+- Supabase PostgreSQL

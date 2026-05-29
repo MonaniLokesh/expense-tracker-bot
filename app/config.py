@@ -3,20 +3,22 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
-missing = [
-    name for name, value in {
-        "TELEGRAM_BOT_TOKEN": TELEGRAM_BOT_TOKEN,
-        "GEMINI_API_KEY": GEMINI_API_KEY,
-        "SUPABASE_URL": SUPABASE_URL,
-        "SUPABASE_KEY": SUPABASE_KEY,
-    }.items()
-    if not value
-]
+TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")
+TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
+TWILIO_WHATSAPP_NUMBER = os.getenv("TWILIO_WHATSAPP_NUMBER")
+WEBHOOK_BASE_URL = os.getenv("WEBHOOK_BASE_URL")
 
+required = {
+    "SUPABASE_URL": SUPABASE_URL,
+    "SUPABASE_KEY": SUPABASE_KEY,
+    "TWILIO_ACCOUNT_SID": TWILIO_ACCOUNT_SID,
+    "TWILIO_AUTH_TOKEN": TWILIO_AUTH_TOKEN,
+    "TWILIO_WHATSAPP_NUMBER": TWILIO_WHATSAPP_NUMBER,
+    "WEBHOOK_BASE_URL": WEBHOOK_BASE_URL,
+}
+missing = [k for k, v in required.items() if not v]
 if missing:
     raise RuntimeError(f"Missing environment variables: {', '.join(missing)}")
