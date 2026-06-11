@@ -3,7 +3,7 @@ from app.db import add_expense
 from app.tools._helpers import parse_json
 
 
-@tool
+@tool(return_direct=True)
 def record_expense(json_input: str) -> str:
     """Save an expense. JSON: user_id, amount, category, optional description, expense_date."""
     try:

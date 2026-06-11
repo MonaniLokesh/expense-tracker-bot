@@ -1,5 +1,6 @@
 # Groq / LangChain
 GROQ_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct"
+GROQ_WHISPER_MODEL = "whisper-large-v3-turbo"
 LLM_TEMPERATURE = 0
 AGENT_VERBOSE = True
 

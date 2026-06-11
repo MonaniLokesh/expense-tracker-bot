@@ -1,11 +1,12 @@
 import base64
 from datetime import date
 import httpx
+from groq import AsyncGroq
 from langchain_core.messages import HumanMessage
 from langchain_groq import ChatGroq
 from langchain_classic.agents import AgentExecutor, create_react_agent
 from app.config import TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN
-from app.constants import GROQ_MODEL, LLM_TEMPERATURE, AGENT_VERBOSE
+from app.constants import GROQ_MODEL, GROQ_WHISPER_MODEL, LLM_TEMPERATURE, AGENT_VERBOSE
 from app.prompt import REACT_AGENT_PROMPT, vision_receipt_text
 from app.tools import ALL_TOOLS, record_expense
 
@@ -15,8 +16,39 @@ tool_names = [t.name for t in ALL_TOOLS]
 
 agent = create_react_agent(llm=llm, tools=ALL_TOOLS, prompt=REACT_AGENT_PROMPT)
 agent_executor = AgentExecutor(
-    agent=agent, tools=ALL_TOOLS, verbose=AGENT_VERBOSE, handle_parsing_errors=True
+    agent=agent,
+    tools=ALL_TOOLS,
+    verbose=AGENT_VERBOSE,
+    handle_parsing_errors=True,
+    max_iterations=4,
 )
+
+def _groq_audio_file(audio_bytes: bytes, content_type: str) -> tuple[str, bytes, str]:
+    """Pick a Groq-accepted filename from audio magic bytes (WhatsApp sends OGG/Opus)."""
+    if audio_bytes[:4] == b"OggS":
+        return "audio.ogg", audio_bytes, "audio/ogg"
+    if audio_bytes[:3] == b"ID3" or (
+        len(audio_bytes) > 1 and audio_bytes[0] == 0xFF and audio_bytes[1] in (0xFB, 0xF3, 0xF2)
+    ):
+        return "audio.mp3", audio_bytes, "audio/mpeg"
+    if len(audio_bytes) > 8 and audio_bytes[4:8] == b"ftyp":
+        return "audio.m4a", audio_bytes, "audio/mp4"
+    mime = content_type.split(";")[0].strip().lower()
+    if mime.startswith("audio/"):
+        return "audio.ogg", audio_bytes, mime or "audio/ogg"
+    return "audio.ogg", audio_bytes, "audio/ogg"
+
+
+async def transcribe_audio(audio_bytes: bytes, content_type: str) -> str:
+    """Transcribe voice note with Groq Whisper; text agent handles the rest."""
+    filename, payload, mime = _groq_audio_file(audio_bytes, content_type)
+    client = AsyncGroq()
+    transcription = await client.audio.transcriptions.create(
+        model=GROQ_WHISPER_MODEL,
+        file=(filename, payload, mime),
+    )
+    return (transcription.text or "").strip()
+
 
 async def download_twilio_media(media_url: str) -> bytes:
     """Download WhatsApp image from Twilio using Basic auth."""
