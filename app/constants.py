@@ -6,6 +6,13 @@ AGENT_VERBOSE = True
 
 # Expenses
 EXPENSE_CATEGORIES = ("food", "transport", "shopping", "bills", "other")
+CATEGORY_EMOJI = {
+    "food": "🍔",
+    "transport": "🚗",
+    "shopping": "🛍️",
+    "bills": "📄",
+    "other": "",
+}
 DEFAULT_RECENT_EXPENSES_LIMIT = 5
 
 # In-memory chat history (per user)

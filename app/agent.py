@@ -1,4 +1,5 @@
 import base64
+import logging
 from datetime import date
 import httpx
 from groq import AsyncGroq
@@ -7,8 +8,12 @@ from langchain_groq import ChatGroq
 from langchain_classic.agents import AgentExecutor, create_react_agent
 from app.config import TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN
 from app.constants import GROQ_MODEL, GROQ_WHISPER_MODEL, LLM_TEMPERATURE, AGENT_VERBOSE
+from app.db import add_expense
 from app.prompt import REACT_AGENT_PROMPT, vision_receipt_text
-from app.tools import ALL_TOOLS, record_expense
+from app.tools import ALL_TOOLS
+from app.tools._helpers import format_receipt_confirmation, parse_json
+
+logger = logging.getLogger(__name__)
 
 llm = ChatGroq(model=GROQ_MODEL, temperature=LLM_TEMPERATURE)
 
@@ -62,7 +67,7 @@ async def download_twilio_media(media_url: str) -> bytes:
         return r.content
 
 async def process_image_expense(user_id: int, image_data: bytes):
-    """Extract receipt fields with Groq vision and save via record_expense."""
+    """Extract receipt fields with Groq vision and save via add_expense."""
     today = str(date.today())
     b64_image = base64.b64encode(image_data).decode("utf-8")
     message = HumanMessage(
@@ -76,8 +81,16 @@ async def process_image_expense(user_id: int, image_data: bytes):
         content = response.content.replace("```json", "").replace("```", "").strip()
         start, end = content.find("{"), content.rfind("}") + 1
         if start == -1 or end <= start:
-            return "Could not parse receipt."
-        result = record_expense.invoke(content[start:end])
-        return f"Receipt processed! {result}"
+            return "Couldn't read that receipt — try a clearer photo?"
+        data = parse_json(content[start:end])
+        add_expense(
+            int(data["user_id"]),
+            data["amount"],
+            data["category"],
+            data.get("description", ""),
+            expense_date=data.get("expense_date"),
+        )
+        return format_receipt_confirmation(data["amount"], data.get("category", ""))
     except Exception as e:
-        return f"Error processing image: {e}"
+        logger.exception("process_image_expense failed: %s", e)
+        return "Couldn't read that receipt — try a clearer photo?"

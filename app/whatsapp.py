@@ -59,13 +59,13 @@ async def whatsapp_webhook(request: Request):
                 if transcript:
                     reply = await run_agent(user_id, message_text=transcript)
                 else:
-                    reply = "Couldn't understand the voice note. Please try again or type your message."
+                    reply = "Couldn't catch that — try again or type it out."
             else:
                 reply = await run_agent(user_id, image_data=media_bytes)
         elif body:
             reply = await run_agent(user_id, message_text=body)
         else:
-            reply = "Send a message, voice note, or receipt photo to log expenses."
+            reply = "Send me what you spent — text, voice, or a receipt photo."
 
     except Exception as e:
         logger.exception("WhatsApp webhook error: %s", e)
