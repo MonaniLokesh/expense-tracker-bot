@@ -17,6 +17,9 @@ def _active_rows(rows):
     return [r for r in rows if not r.get("deleted_at")]
 
 
+def _norm_category(category) -> str:
+    return (category or "").strip().lower()
+
 def add_expense(
     user_id,
     amount,
@@ -30,7 +33,7 @@ def add_expense(
     data = {
         "user_id": user_id,
         "amount": amount,
-        "category": category,
+        "category": _norm_category(category),
         "description": description,
         "expense_date": expense_date or str(date.today()),
     }
@@ -48,15 +51,17 @@ def fetch_expenses(user_id, start_date=None, end_date=None, category=None):
         q = q.gte("expense_date", start_date)
     if end_date:
         q = q.lte("expense_date", end_date)
-    if category:
-        q = q.eq("category", category.lower())
     try:
         rows = _execute(q.is_("deleted_at", "null")).data or []
     except Exception as e:
         if "deleted_at" not in str(e):
             raise
         rows = _execute(q).data or []
-    return _active_rows(rows)
+    rows = _active_rows(rows)
+    if category:
+        want = _norm_category(category)
+        rows = [r for r in rows if _norm_category(r.get("category")) == want]
+    return rows
 
 
 def summarize_expenses(rows):
