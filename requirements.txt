@@ -9,3 +9,4 @@ python-multipart==0.0.20
 uvicorn==0.34.0
 twilio==9.4.0
 httpx==0.28.1
+groq==0.37.1
