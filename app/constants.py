@@ -14,6 +14,7 @@ CATEGORY_EMOJI = {
     "other": "",
 }
 DEFAULT_RECENT_EXPENSES_LIMIT = 5
+RECENT_CONTEXT_LIMIT = 5
 
-# In-memory chat history (per user)
+# In-memory chat history (per user; lost on server restart)
 CHAT_HISTORY_MAX_TURNS = 10
