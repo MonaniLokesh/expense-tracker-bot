@@ -7,9 +7,9 @@ from langchain_core.messages import HumanMessage
 from langchain_groq import ChatGroq
 from langchain_classic.agents import AgentExecutor, create_react_agent
 from app.config import TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN
-from app.constants import GROQ_MODEL, GROQ_WHISPER_MODEL, LLM_TEMPERATURE, AGENT_VERBOSE
+from app.constants import EXPENSE_CATEGORIES, GROQ_MODEL, GROQ_WHISPER_MODEL, LLM_TEMPERATURE, AGENT_VERBOSE
 from app.db import add_expense
-from app.prompt import REACT_AGENT_PROMPT, vision_receipt_text
+from app.prompt import REACT_AGENT_PROMPT, vision_classify_receipt_text, vision_receipt_extract_text
 from app.tools import ALL_TOOLS
 from app.tools._helpers import format_receipt_confirmation, parse_json
 
@@ -19,12 +19,19 @@ llm = ChatGroq(model=GROQ_MODEL, temperature=LLM_TEMPERATURE)
 
 tool_names = [t.name for t in ALL_TOOLS]
 
+_REACT_PARSING_HINT = (
+    "Invalid format. After Thought: include Action: + Action Input: OR Final Answer:. "
+    "For greetings, refusals, and off-topic messages: "
+    "Thought: Do I need to use a tool? No, then Final Answer: <your reply>. "
+    "Never end with only Thought:."
+)
+
 agent = create_react_agent(llm=llm, tools=ALL_TOOLS, prompt=REACT_AGENT_PROMPT)
 agent_executor = AgentExecutor(
     agent=agent,
     tools=ALL_TOOLS,
     verbose=AGENT_VERBOSE,
-    handle_parsing_errors=True,
+    handle_parsing_errors=_REACT_PARSING_HINT,
     max_iterations=4,
 )
 
@@ -66,31 +73,72 @@ async def download_twilio_media(media_url: str) -> bytes:
         r.raise_for_status()
         return r.content
 
-async def process_image_expense(user_id: int, image_data: bytes):
-    """Extract receipt fields with Groq vision and save via add_expense."""
-    today = str(date.today())
-    b64_image = base64.b64encode(image_data).decode("utf-8")
-    message = HumanMessage(
+_NOT_RECEIPT_REPLY = "That doesn't look like a bill or receipt — send a photo of one, or type what you spent."
+_RECEIPT_FAIL_REPLY = "Couldn't read that receipt — try a clearer photo?"
+
+
+def _image_message(text: str, image_data: bytes) -> HumanMessage:
+    b64 = base64.b64encode(image_data).decode("utf-8")
+    return HumanMessage(
         content=[
-            {"type": "text", "text": vision_receipt_text(user_id, today)},
-            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64_image}"}},
+            {"type": "text", "text": text},
+            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}},
         ]
     )
+
+
+def _parse_json_blob(content: str) -> dict:
+    clean = content.replace("```json", "").replace("```", "").strip()
+    start, end = clean.find("{"), clean.rfind("}") + 1
+    if start == -1 or end <= start:
+        raise ValueError("no JSON object in response")
+    return parse_json(clean[start:end])
+
+
+def _normalize_receipt_fields(data: dict, today: str) -> dict:
+    amount = float(data["amount"])
+    if amount <= 0 or amount > 10_000_000:
+        raise ValueError("invalid amount")
+    cat = (data.get("category") or "other").strip().lower()
+    if cat not in EXPENSE_CATEGORIES:
+        cat = "other"
+    desc = " ".join(str(data.get("description", "")).replace("\n", " ").split())[:200]
+    return {
+        "amount": amount,
+        "category": cat,
+        "description": desc,
+        "expense_date": data.get("expense_date") or today,
+    }
+
+
+async def _is_receipt_image(image_data: bytes) -> bool:
+    """Stage 1 vision gate — only bills/receipts proceed to extraction."""
     try:
-        response = await llm.ainvoke([message])
-        content = response.content.replace("```json", "").replace("```", "").strip()
-        start, end = content.find("{"), content.rfind("}") + 1
-        if start == -1 or end <= start:
-            return "Couldn't read that receipt — try a clearer photo?"
-        data = parse_json(content[start:end])
+        response = await llm.ainvoke([_image_message(vision_classify_receipt_text(), image_data)])
+        data = _parse_json_blob(response.content)
+        return bool(data.get("is_receipt"))
+    except Exception as e:
+        logger.warning("receipt classification failed: %s", e)
+        return False
+
+
+async def process_image_expense(user_id: int, image_data: bytes):
+    """Classify image, then extract receipt fields and save."""
+    today = str(date.today())
+    try:
+        if not await _is_receipt_image(image_data):
+            return _NOT_RECEIPT_REPLY
+
+        response = await llm.ainvoke([_image_message(vision_receipt_extract_text(today), image_data)])
+        fields = _normalize_receipt_fields(_parse_json_blob(response.content), today)
         add_expense(
-            int(data["user_id"]),
-            data["amount"],
-            data["category"],
-            data.get("description", ""),
-            expense_date=data.get("expense_date"),
+            user_id,
+            fields["amount"],
+            fields["category"],
+            fields["description"],
+            expense_date=fields["expense_date"],
         )
-        return format_receipt_confirmation(data["amount"], data.get("category", ""))
+        return format_receipt_confirmation(fields["amount"], fields["category"])
     except Exception as e:
         logger.exception("process_image_expense failed: %s", e)
-        return "Couldn't read that receipt — try a clearer photo?"
+        return _RECEIPT_FAIL_REPLY

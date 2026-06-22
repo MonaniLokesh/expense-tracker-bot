@@ -3,6 +3,7 @@ from datetime import date, datetime, timezone
 from supabase import create_client
 from app.config import SUPABASE_URL, SUPABASE_KEY
 from app.constants import DEFAULT_RECENT_EXPENSES_LIMIT
+from app.security import normalize_category, sanitize_description
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
@@ -17,9 +18,6 @@ def _active_rows(rows):
     return [r for r in rows if not r.get("deleted_at")]
 
 
-def _norm_category(category) -> str:
-    return (category or "").strip().lower()
-
 def add_expense(
     user_id,
     amount,
@@ -33,8 +31,8 @@ def add_expense(
     data = {
         "user_id": user_id,
         "amount": amount,
-        "category": _norm_category(category),
-        "description": description,
+        "category": normalize_category(category),
+        "description": sanitize_description(description),
         "expense_date": expense_date or str(date.today()),
     }
     return supabase.table("expenses").insert(data).execute()
@@ -59,8 +57,8 @@ def fetch_expenses(user_id, start_date=None, end_date=None, category=None):
         rows = _execute(q).data or []
     rows = _active_rows(rows)
     if category:
-        want = _norm_category(category)
-        rows = [r for r in rows if _norm_category(r.get("category")) == want]
+        want = (category or "").strip().lower()
+        rows = [r for r in rows if (r.get("category") or "other").strip().lower() == want]
     return rows
 
 
