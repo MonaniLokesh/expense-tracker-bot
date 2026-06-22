@@ -10,6 +10,7 @@ from app.config import TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN
 from app.constants import GROQ_MODEL, GROQ_WHISPER_MODEL, LLM_TEMPERATURE, AGENT_VERBOSE
 from app.db import add_expense
 from app.prompt import REACT_AGENT_PROMPT, vision_receipt_text
+from app.security import normalize_category, sanitize_description, validate_amount
 from app.tools import ALL_TOOLS
 from app.tools._helpers import format_receipt_confirmation, parse_json
 
@@ -19,13 +20,19 @@ llm = ChatGroq(model=GROQ_MODEL, temperature=LLM_TEMPERATURE)
 
 tool_names = [t.name for t in ALL_TOOLS]
 
+_REACT_PARSING_HINT = (
+    "Invalid format. Start with 'Thought:'. "
+    "Then either 'Action:' + 'Action Input:' OR 'Final Answer:'. "
+    "If you already have data from recent_expenses or an Observation, use Final Answer — do not call a tool again."
+)
+
 agent = create_react_agent(llm=llm, tools=ALL_TOOLS, prompt=REACT_AGENT_PROMPT)
 agent_executor = AgentExecutor(
     agent=agent,
     tools=ALL_TOOLS,
     verbose=AGENT_VERBOSE,
-    handle_parsing_errors=True,
-    max_iterations=4,
+    handle_parsing_errors=_REACT_PARSING_HINT,
+    max_iterations=3,
 )
 
 def _groq_audio_file(audio_bytes: bytes, content_type: str) -> tuple[str, bytes, str]:
@@ -83,14 +90,17 @@ async def process_image_expense(user_id: int, image_data: bytes):
         if start == -1 or end <= start:
             return "Couldn't read that receipt — try a clearer photo?"
         data = parse_json(content[start:end])
+        amount = validate_amount(data["amount"])
+        category = normalize_category(data.get("category", "other"))
+        description = sanitize_description(data.get("description", ""))
         add_expense(
-            int(data["user_id"]),
-            data["amount"],
-            data["category"],
-            data.get("description", ""),
+            user_id,
+            amount,
+            category,
+            description,
             expense_date=data.get("expense_date"),
         )
-        return format_receipt_confirmation(data["amount"], data.get("category", ""))
+        return format_receipt_confirmation(amount, category)
     except Exception as e:
         logger.exception("process_image_expense failed: %s", e)
         return "Couldn't read that receipt — try a clearer photo?"

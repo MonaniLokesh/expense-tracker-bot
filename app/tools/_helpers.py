@@ -28,6 +28,23 @@ def _display_label(category: str, description: str) -> str:
     return cat
 
 
+def format_expense_line(amount, category: str = "", description: str = "", expense_date: str = "") -> str:
+    """Single expense line for lists and query breakdowns."""
+    label = _display_label(category, description)
+    date_part = f" · {_short_date(expense_date)}" if expense_date else ""
+    return f"• {format_amount(amount)} {label}{date_part}"
+
+
+def _short_date(date_str: str) -> str:
+    """YYYY-MM-DD → Mon DD."""
+    try:
+        from datetime import datetime
+        dt = datetime.strptime(str(date_str)[:10], "%Y-%m-%d")
+        return f"{dt.strftime('%b')} {dt.day}"
+    except (ValueError, TypeError):
+        return str(date_str)
+
+
 def format_expense_confirmation(amount, category: str, description: str = "") -> str:
     """User-facing confirmation for a saved expense."""
     label = _display_label(category, description)
