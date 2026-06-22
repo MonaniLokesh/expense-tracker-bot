@@ -23,6 +23,11 @@ from app.tools import ALL_TOOLS
 
 CHAT_HISTORY = {}
 
+
+def _tool_descriptions() -> str:
+    return "\n".join(f"{t.name}: {t.description}" for t in ALL_TOOLS)
+
+
 def phone_to_user_id(phone: str) -> int:
     """Map WhatsApp number to numeric user_id for the DB."""
     digits = "".join(c for c in phone if c.isdigit())
@@ -74,25 +79,31 @@ async def run_agent(
             update_history(user_id, "[receipt photo]", output)
             return output
 
-    if message_text:
-        result = await agent_executor.ainvoke(
-            {
-                "input": message_text,
-                "user_id": user_id,
-                "today": str(date.today()),
-                "schema": EXPENSES_SCHEMA.format(user_id=user_id),
-                "categories": EXPENSE_CATEGORIES_PROMPT,
-                "reply_style": WHATSAPP_REPLY_STYLE,
-                "injection_guards": PROMPT_INJECTION_GUARDRAILS,
-                "query_format": QUERY_RESPONSE_FORMAT,
-                "chat_history": get_formatted_history(user_id),
-                "tool_names": tool_names,
-                "tools": ", ".join(tool_names),
-            }
-        )
-        output = sanitize_whatsapp_reply(result.get("output") or "")
-        update_history(user_id, message_text, output)
-        return output
+        if message_text:
+            today = str(date.today())
+            message_text = truncate_user_message(message_text, MAX_USER_MESSAGE_LEN)
+            result = await agent_executor.ainvoke(
+                {
+                    "input": message_text,
+                    "user_id": user_id,
+                    "today": today,
+                    "categories": EXPENSE_CATEGORIES_PROMPT,
+                    "tool_guide": TOOL_GUIDE,
+                    "tool_names": ", ".join(tool_names),
+                    "tools": _tool_descriptions(),
+                    "memory_rules": MEMORY_CONTEXT_RULES,
+                    "react_format": REACT_FORMAT.format(user_id=user_id, today=today),
+                    "reply_style": WHATSAPP_REPLY_STYLE,
+                    "injection_guards": PROMPT_INJECTION_GUARDRAILS,
+                    "query_format": QUERY_RESPONSE_FORMAT,
+                    "recent_expenses": format_recent_expenses_context(user_id),
+                    "chat_history": get_formatted_history(user_id),
+                    "agent_scratchpad": "",
+                }
+            )
+            output = sanitize_whatsapp_reply(result.get("output") or "")
+            update_history(user_id, message_text, output)
+            return output
 
         return "No input received."
     finally:

@@ -57,8 +57,8 @@ def fetch_expenses(user_id, start_date=None, end_date=None, category=None):
         rows = _execute(q).data or []
     rows = _active_rows(rows)
     if category:
-        want = normalize_category(category)
-        rows = [r for r in rows if normalize_category(r.get("category")) == want]
+        want = (category or "").strip().lower()
+        rows = [r for r in rows if (r.get("category") or "other").strip().lower() == want]
     return rows
 
 

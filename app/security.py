@@ -33,6 +33,7 @@ def validate_amount(amount) -> float:
 
 
 def normalize_category(category: str) -> str:
+    """Lowercase + allowlist guard on write paths only — semantic choice is the LLM's job."""
     cat = (category or "other").strip().lower()
     if cat not in EXPENSE_CATEGORIES:
         return "other"
