@@ -1,19 +1,31 @@
 from datetime import date
 from app.agent import agent_executor, process_image_expense, tool_names
-from app.constants import CHAT_HISTORY_MAX_TURNS, RECENT_CONTEXT_LIMIT
+from app.constants import CHAT_HISTORY_MAX_TURNS, MAX_USER_MESSAGE_LEN, RECENT_CONTEXT_LIMIT
 from app.db import list_recent_expenses
 from app.prompt import (
-    EXPENSES_SCHEMA,
     EXPENSE_CATEGORIES_PROMPT,
     MEMORY_CONTEXT_RULES,
-    QUERY_RESPONSE_FORMAT,
-    WHATSAPP_REPLY_STYLE,
     PROMPT_INJECTION_GUARDRAILS,
+    QUERY_RESPONSE_FORMAT,
+    REACT_FORMAT,
+    TOOL_GUIDE,
+    WHATSAPP_REPLY_STYLE,
 )
 from app.reply import sanitize_whatsapp_reply
+from app.security import (
+    bind_request_user_id,
+    reset_request_user_id,
+    sanitize_description,
+    truncate_user_message,
+)
 from app.tools._helpers import format_amount
+from app.tools import ALL_TOOLS
 
 CHAT_HISTORY = {}
+
+
+def _tool_descriptions() -> str:
+    return "\n".join(f"{t.name}: {t.description}" for t in ALL_TOOLS)
 
 
 def phone_to_user_id(phone: str) -> int:
@@ -40,7 +52,7 @@ def format_recent_expenses_context(user_id: int, limit: int = RECENT_CONTEXT_LIM
     lines = []
     for r in rows:
         cat = (r.get("category") or "other").strip().lower()
-        desc = (r.get("description") or "").strip()
+        desc = sanitize_description((r.get("description") or "").strip())
         detail = f" · {desc}" if desc and desc.lower() != cat else ""
         date_str = r.get("expense_date", "")
         lines.append(f"{format_amount(r['amount'])} {cat}{detail} · {date_str}")
@@ -60,31 +72,38 @@ async def run_agent(
     message_text: str = None,
     image_data: bytes = None,
 ) -> str:
-    if image_data:
-        output = sanitize_whatsapp_reply(await process_image_expense(user_id, image_data))
-        update_history(user_id, "[receipt photo]", output)
-        return output
+    token = bind_request_user_id(user_id)
+    try:
+        if image_data:
+            output = sanitize_whatsapp_reply(await process_image_expense(user_id, image_data))
+            update_history(user_id, "[receipt photo]", output)
+            return output
 
-    if message_text:
-        result = await agent_executor.ainvoke(
-            {
-                "input": message_text,
-                "user_id": user_id,
-                "today": str(date.today()),
-                "schema": EXPENSES_SCHEMA.format(user_id=user_id),
-                "categories": EXPENSE_CATEGORIES_PROMPT,
-                "reply_style": WHATSAPP_REPLY_STYLE,
-                "injection_guards": PROMPT_INJECTION_GUARDRAILS,
-                "query_format": QUERY_RESPONSE_FORMAT,
-                "memory_rules": MEMORY_CONTEXT_RULES,
-                "recent_expenses": format_recent_expenses_context(user_id),
-                "chat_history": get_formatted_history(user_id),
-                "tool_names": tool_names,
-                "tools": ", ".join(tool_names),
-            }
-        )
-        output = sanitize_whatsapp_reply(result["output"])
-        update_history(user_id, message_text, output)
-        return output
+        if message_text:
+            message_text = truncate_user_message(message_text, MAX_USER_MESSAGE_LEN)
+            result = await agent_executor.ainvoke(
+                {
+                    "input": message_text,
+                    "user_id": user_id,
+                    "today": str(date.today()),
+                    "categories": EXPENSE_CATEGORIES_PROMPT,
+                    "tool_guide": TOOL_GUIDE,
+                    "tool_names": ", ".join(tool_names),
+                    "tools": _tool_descriptions(),
+                    "memory_rules": MEMORY_CONTEXT_RULES,
+                    "react_format": REACT_FORMAT.format(user_id=user_id, today=str(date.today())),
+                    "reply_style": WHATSAPP_REPLY_STYLE,
+                    "injection_guards": PROMPT_INJECTION_GUARDRAILS,
+                    "query_format": QUERY_RESPONSE_FORMAT,
+                    "recent_expenses": format_recent_expenses_context(user_id),
+                    "chat_history": get_formatted_history(user_id),
+                    "agent_scratchpad": "",
+                }
+            )
+            output = sanitize_whatsapp_reply(result["output"])
+            update_history(user_id, message_text, output)
+            return output
 
-    return "No input received."
+        return "No input received."
+    finally:
+        reset_request_user_id(token)
