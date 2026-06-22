@@ -2,7 +2,7 @@ import logging
 from langchain_core.tools import tool
 from app.constants import QUERY_DETAIL_LIMIT
 from app.db import fetch_expenses
-from app.security import get_bound_user_id, normalize_category
+from app.security import get_bound_user_id
 from app.tools._helpers import format_amount, format_expense_line, parse_json
 
 logger = logging.getLogger(__name__)
@@ -40,7 +40,7 @@ def _item_lines(rows, limit: int = QUERY_DETAIL_LIMIT) -> list[str]:
     return lines
 
 
-@tool
+@tool(return_direct=True)
 def query_expenses(input_str: str) -> str:
     """Query totals and itemized breakdown. With category filter, lists each expense with description. JSON: user_id, optional start_date, end_date, category."""
     try:
@@ -48,7 +48,7 @@ def query_expenses(input_str: str) -> str:
         user_id = get_bound_user_id()
         category = data.get("category")
         if category:
-            category = normalize_category(category)
+            category = category.strip().lower()
         rows = fetch_expenses(
             user_id,
             start_date=data.get("start_date"),
