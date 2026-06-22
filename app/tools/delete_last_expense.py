@@ -1,6 +1,7 @@
 import logging
 from langchain_core.tools import tool
 from app.db import delete_last_expense
+from app.security import get_bound_user_id
 from app.tools._helpers import format_amount
 
 logger = logging.getLogger(__name__)
@@ -10,7 +11,7 @@ logger = logging.getLogger(__name__)
 def delete_last_expense_tool(user_id: str) -> str:
     """Delete the most recent expense. Input is user_id as string."""
     try:
-        row = delete_last_expense(int(user_id))
+        row = delete_last_expense(get_bound_user_id())
         if not row:
             return "Nothing to undo."
         cat = (row.get("category") or "expense").strip().lower()

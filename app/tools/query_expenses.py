@@ -1,7 +1,9 @@
 import logging
 from langchain_core.tools import tool
+from app.constants import QUERY_DETAIL_LIMIT
 from app.db import fetch_expenses
-from app.tools._helpers import format_amount, parse_json
+from app.security import get_bound_user_id, normalize_category
+from app.tools._helpers import format_amount, format_expense_line, parse_json
 
 logger = logging.getLogger(__name__)
 
@@ -20,32 +22,55 @@ def _period_label(data: dict) -> str:
     return f"Until {end}"
 
 
+def _item_lines(rows, limit: int = QUERY_DETAIL_LIMIT) -> list[str]:
+    sorted_rows = sorted(rows, key=lambda r: r.get("expense_date", ""), reverse=True)
+    lines = []
+    for r in sorted_rows[:limit]:
+        lines.append(
+            format_expense_line(
+                r["amount"],
+                r.get("category", ""),
+                r.get("description", ""),
+                r.get("expense_date", ""),
+            )
+        )
+    remaining = len(sorted_rows) - limit
+    if remaining > 0:
+        lines.append(f"• …and {remaining} more")
+    return lines
+
+
 @tool
 def query_expenses(input_str: str) -> str:
-    """Query totals and breakdown. JSON: user_id, optional start_date, end_date, category (YYYY-MM-DD)."""
+    """Query totals and itemized breakdown. With category filter, lists each expense with description. JSON: user_id, optional start_date, end_date, category."""
     try:
         data = parse_json(input_str)
-        user_id = int(data["user_id"])
+        user_id = get_bound_user_id()
+        category = data.get("category")
+        if category:
+            category = normalize_category(category)
         rows = fetch_expenses(
             user_id,
             start_date=data.get("start_date"),
             end_date=data.get("end_date"),
-            category=data.get("category"),
+            category=category,
         )
         if not rows:
             return "Nothing logged for that period."
 
         total = sum(float(r["amount"]) for r in rows)
+        period = _period_label(data)
+
+        if category:
+            cat = category.title()
+            header = f"{cat} ({period}): {format_amount(total)} total"
+            items = _item_lines(rows)
+            return header + "\n" + "\n".join(items)
+
         by_cat: dict[str, float] = {}
         for r in rows:
             cat = (r.get("category") or "other").strip().lower()
             by_cat[cat] = by_cat.get(cat, 0) + float(r["amount"])
-
-        period = _period_label(data)
-        if data.get("category"):
-            cat = data["category"].strip().lower()
-            header = f"{cat.title()} ({period}): {format_amount(total)} total"
-            return header
 
         lines = [f"• {c.title()} {format_amount(amt)}" for c, amt in sorted(by_cat.items())]
         return f"{period}: {format_amount(total)} total\n" + "\n".join(lines)
