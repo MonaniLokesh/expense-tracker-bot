@@ -12,7 +12,6 @@ from app.reply import sanitize_whatsapp_reply
 
 CHAT_HISTORY = {}
 
-
 def phone_to_user_id(phone: str) -> int:
     """Map WhatsApp number to numeric user_id for the DB."""
     digits = "".join(c for c in phone if c.isdigit())
@@ -53,7 +52,7 @@ async def run_agent(
                 "tools": ", ".join(tool_names),
             }
         )
-        output = sanitize_whatsapp_reply(result["output"])
+        output = sanitize_whatsapp_reply(result.get("output") or "")
         update_history(user_id, message_text, output)
         return output
 
