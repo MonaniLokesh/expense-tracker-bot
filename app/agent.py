@@ -7,9 +7,10 @@ from langchain_core.messages import HumanMessage
 from langchain_groq import ChatGroq
 from langchain_classic.agents import AgentExecutor, create_react_agent
 from app.config import TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN
-from app.constants import EXPENSE_CATEGORIES, GROQ_MODEL, GROQ_WHISPER_MODEL, LLM_TEMPERATURE, AGENT_VERBOSE
+from app.constants import GROQ_MODEL, GROQ_WHISPER_MODEL, LLM_TEMPERATURE, AGENT_VERBOSE
 from app.db import add_expense
 from app.prompt import REACT_AGENT_PROMPT, vision_classify_receipt_text, vision_receipt_extract_text
+from app.security import normalize_category, sanitize_description, validate_amount
 from app.tools import ALL_TOOLS
 from app.tools._helpers import format_receipt_confirmation, parse_json
 
@@ -96,17 +97,10 @@ def _parse_json_blob(content: str) -> dict:
 
 
 def _normalize_receipt_fields(data: dict, today: str) -> dict:
-    amount = float(data["amount"])
-    if amount <= 0 or amount > 10_000_000:
-        raise ValueError("invalid amount")
-    cat = (data.get("category") or "other").strip().lower()
-    if cat not in EXPENSE_CATEGORIES:
-        cat = "other"
-    desc = " ".join(str(data.get("description", "")).replace("\n", " ").split())[:200]
     return {
-        "amount": amount,
-        "category": cat,
-        "description": desc,
+        "amount": validate_amount(data["amount"]),
+        "category": normalize_category(data.get("category", "other")),
+        "description": sanitize_description(data.get("description", "")),
         "expense_date": data.get("expense_date") or today,
     }
 
